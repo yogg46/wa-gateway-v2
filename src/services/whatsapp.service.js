@@ -3,7 +3,6 @@ const {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
-  makeInMemoryStore,
 } = require('@whiskeysockets/baileys');
 const config = require('../config');
 const logger = require('../utils/logger');
@@ -19,7 +18,6 @@ class WhatsAppService {
     this.connectionState = WA_CONNECTION_STATE.CLOSE;
     this.reconnectAttempts = 0;
     this.isInitialized = false;
-    this.store = null;
     this.eventHandlers = new Map();
   }
 
@@ -48,28 +46,16 @@ class WhatsAppService {
       
       logger.info(`Using Baileys version: ${version.join('.')}`);
 
-      // Create in-memory store for messages
-      this.store = makeInMemoryStore({});
-      this.store.readFromFile(path.join(config.whatsapp.sessionPath, 'store.json'));
-      
-      // Save store every 10 seconds
-      setInterval(() => {
-        this.store.writeToFile(path.join(config.whatsapp.sessionPath, 'store.json'));
-      }, 10000);
+      // 🔥 Gunakan Pino jika available, fallback ke Winston
+      const baileysLogger = logger.getPino ? (logger.getPino() || logger) : logger;
 
       // Create socket
       this.sock = makeWASocket({
         version,
         auth: state,
         printQRInTerminal: config.isDevelopment,
-        logger: {
-          level: 'silent',
-          child: () => ({ level: 'silent' }),
-        },
+        logger: baileysLogger, // Langsung pakai logger yang sudah powerful
       });
-
-      // Bind store to socket
-      this.store.bind(this.sock.ev);
 
       // Setup event handlers
       this.setupEventHandlers(saveCreds);
@@ -186,7 +172,7 @@ class WhatsAppService {
                    msg.message?.imageMessage?.caption || 
                    '';
 
-      logger.info(`Message received from ${from}: ${body.substring(0, 50)}...`);
+      logger.whatsapp(`Message received from ${from}: ${body.substring(0, 50)}...`);
 
       // Emit message received event
       this.emitEvent(WEBHOOK_EVENTS.MESSAGE_RECEIVED, {
@@ -209,7 +195,7 @@ class WhatsAppService {
 
       if (messageUpdate.status === 3) {
         // Status 3 = Delivered
-        logger.info(`Message ${key.id} delivered`);
+        logger.whatsapp(`Message ${key.id} delivered`);
         this.emitEvent(WEBHOOK_EVENTS.MESSAGE_DELIVERED, {
           messageId: key.id,
           to: key.remoteJid,
@@ -219,7 +205,7 @@ class WhatsAppService {
 
       if (messageUpdate.status === 4) {
         // Status 4 = Read
-        logger.info(`Message ${key.id} read`);
+        logger.whatsapp(`Message ${key.id} read`);
         this.emitEvent(WEBHOOK_EVENTS.MESSAGE_READ, {
           messageId: key.id,
           to: key.remoteJid,
@@ -240,7 +226,7 @@ class WhatsAppService {
 
       const result = await this.sock.sendMessage(to, { text });
       
-      logger.info(`Message sent to ${to}`);
+      logger.whatsapp(`Message sent to ${to}`);
       
       return {
         messageId: result.key.id,
@@ -267,7 +253,7 @@ class WhatsAppService {
         caption,
       });
 
-      logger.info(`Image sent to ${to}`);
+      logger.whatsapp(`Image sent to ${to}`);
 
       return {
         messageId: result.key.id,
@@ -294,7 +280,7 @@ class WhatsAppService {
         caption,
       });
 
-      logger.info(`Video sent to ${to}`);
+      logger.whatsapp(`Video sent to ${to}`);
 
       return {
         messageId: result.key.id,
@@ -322,7 +308,7 @@ class WhatsAppService {
         mimetype,
       });
 
-      logger.info(`Document sent to ${to}`);
+      logger.whatsapp(`Document sent to ${to}`);
 
       return {
         messageId: result.key.id,
